@@ -1,0 +1,24 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+pydantic = "*"
+rdflib = "*"
+networkx = "*"
+matplotlib = "*"
+pyvis = "*"
+jupyterlab = "*"
+pandas = "*"
+seaborn = "*"
+plotly = "*"
+pypdf2 = "*"
+pymupdf = "*"
+ipython = "*"
+numpy = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.11"
