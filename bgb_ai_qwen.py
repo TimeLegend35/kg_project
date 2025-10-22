@@ -52,7 +52,7 @@ def main():
         print("\n" + "=" * 50)
         print("📊 **EXECUTION SUMMARY:**")
         print("=" * 50)
-        print(f"🔄 Iterations: {result['iterations']}")
+        #print(f"🔄 Iterations: {result['iterations']}")
         print(f"💬 Total messages: {len(result['messages'])}")
         print(f"🧠 Thinking mode: {'Enabled' if result['thinking_mode'] else 'Disabled'}")
         
