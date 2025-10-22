@@ -20,7 +20,7 @@ ollama serve
 ollama pull qwen3:14B
 
 # Run the BGB AI Assistant
-pipenv run python bgb_ai_qwen.py "Your German legal question"
+pipenv run python bgb_ai_qwen.py "wenn mein hund eine vase kaputt macht muss ich dann zahlen?"
 ```
 
 ### Example Usage
