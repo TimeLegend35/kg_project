@@ -1,3 +1,4 @@
+<img width="1840" height="614" alt="image" src="https://github.com/user-attachments/assets/f5d7a692-f24e-47b1-8334-396b1e686e10" />
 # BGB Knowledge Graph Project
 
 A comprehensive AI-powered legal assistant for the German Bürgerliches Gesetzbuch (BGB) with knowledge graph capabilities.
