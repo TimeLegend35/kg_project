@@ -78,15 +78,27 @@ def build_graph(data: Dict[str, Any]) -> Graph:
             g.add((para_uri, PROP_PARA_IDENTIFIER, Literal(para.get("paragraph_identifier"))))
             g.add((para_uri, PROP_TEXT_CONTENT, Literal(para.get("text_content"))))
 
-            for concept in para.get("defines_concepts", []):
-                concept_uri = curie_to_uri(concept["id"])
-                g.add((concept_uri, RDF.type, CLASS_CONCEPT))
-                g.add((concept_uri, RDFS.label, Literal(concept.get("label"))))
-                g.add((para_uri, PROP_DEFINES, concept_uri))
+            # --- CONCEPT LOGIC REMOVED FROM HERE ---
+            # The concepts are now handled by the global list below.
 
             for ref in para.get("refers_to", []):
                 target_uri = curie_to_uri(ref["target_norm_id"])
                 g.add((para_uri, PROP_REFERS_TO, target_uri))
+
+    # --- NEW CONCEPT LOGIC ---
+    # Add concepts from the global concept index provided in the JSON
+    # Note: the JSON stores this as a dictionary (key: id, value: object)
+    concepts = data.get("concepts", {})
+    for concept in concepts:
+        concept_uri = curie_to_uri(concept["id"])
+        g.add((concept_uri, RDF.type, CLASS_CONCEPT))
+        g.add((concept_uri, RDFS.label, Literal(concept.get("label"))))
+        
+        # Link the concept back to the paragraph that defines it
+        if "defined_in" in concept:
+            para_uri = curie_to_uri(concept["defined_in"])
+            # This creates the triple: [Paragraph] bgb-onto:defines [LegalConcept]
+            g.add((para_uri, PROP_DEFINES, concept_uri))
 
     return g
 
@@ -101,8 +113,14 @@ def main() -> int:
         data = json.load(f)
 
     g = build_graph(data)
+    
+    # Ensure the output directory exists
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
     ttl = g.serialize(format="turtle")
-    Path(args.output).write_text(ttl, encoding="utf-8")
+    output_path.write_text(ttl, encoding="utf-8")
+    
     print(f"Graph written to {args.output}. Triples: {len(g)}")
     return 0
 
