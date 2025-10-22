@@ -8,7 +8,6 @@ import logging
 import requests
 import sys
 import time
-from urllib.parse import urljoin
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,139 +33,72 @@ def wait_for_solr(solr_base_url: str, timeout: int = 60):
 
 def configure_core_schema(solr_url: str):
     """Configure the Solr core schema."""
-    schema_api = urljoin(solr_url, "schema")
+    schema_api = f"{solr_url}/schema"
 
-    # Field types
-    field_types = [
-        {
-            "name": "text_de",
-            "class": "solr.TextField",
-            "positionIncrementGap": "100",
-            "analyzer": {
-                "tokenizer": {"class": "solr.StandardTokenizerFactory"},
-                "filters": [
-                    {"class": "solr.LowerCaseFilterFactory"},
-                    {
-                        "class": "solr.StopFilterFactory",
-                        "ignoreCase": "true",
-                        "words": "lang/stopwords_de.txt",
-                    },
-                    {"class": "solr.GermanNormalizationFilterFactory"},
-                    {"class": "solr.GermanLightStemFilterFactory"},
-                ],
-            },
-        }
-    ]
+    # Add German text field type
+    field_type = {
+        "name": "text_de",
+        "class": "solr.TextField",
+        "positionIncrementGap": "100",
+        "analyzer": {
+            "tokenizer": {"class": "solr.StandardTokenizerFactory"},
+            "filters": [
+                {"class": "solr.LowerCaseFilterFactory"},
+                {"class": "solr.GermanNormalizationFilterFactory"},
+                {"class": "solr.GermanLightStemFilterFactory"},
+            ],
+        },
+    }
 
-    # Add field types
-    for field_type in field_types:
-        try:
-            response = requests.post(
-                schema_api,
-                headers={"Content-Type": "application/json"},
-                data=json.dumps({"add-field-type": field_type}),
-                timeout=10,
-            )
-            if response.status_code == 200:
-                logger.info(f"Added field type: {field_type['name']}")
-        except requests.RequestException as e:
-            logger.warning(f"Could not add field type {field_type['name']}: {e}")
+    try:
+        requests.post(
+            schema_api,
+            headers={"Content-Type": "application/json"},
+            data=json.dumps({"add-field-type": field_type}),
+            timeout=10,
+        )
+        logger.info("Added German text field type")
+    except requests.RequestException:
+        pass  # Field type might already exist
 
-    # Fields to add
+    # Add required fields
     fields = [
-        {
-            "name": "uri",
-            "type": "string",
-            "indexed": True,
-            "stored": True,
-            "required": True,
-        },
-        {
-            "name": "type",
-            "type": "string",
-            "indexed": True,
-            "stored": True,
-            "required": True,
-        },
-        {
-            "name": "rdf_type",
-            "type": "string",
-            "indexed": True,
-            "stored": True,
-            "multiValued": True,
-        },
         {"name": "label", "type": "text_de", "indexed": True, "stored": True},
         {"name": "title", "type": "text_de", "indexed": True, "stored": True},
         {"name": "text_content", "type": "text_de", "indexed": True, "stored": True},
-        {"name": "norm_number", "type": "string", "indexed": True, "stored": True},
-        {"name": "paragraph_number", "type": "string", "indexed": True, "stored": True},
-        {
-            "name": "has_norm",
-            "type": "string",
-            "indexed": True,
-            "stored": True,
-            "multiValued": True,
-        },
-        {
-            "name": "has_paragraph",
-            "type": "string",
-            "indexed": True,
-            "stored": True,
-            "multiValued": True,
-        },
-        {"name": "belongs_to_norm", "type": "string", "indexed": True, "stored": True},
-        {
-            "name": "mentions_concept",
-            "type": "string",
-            "indexed": True,
-            "stored": True,
-            "multiValued": True,
-        },
-        {
-            "name": "search_text",
-            "type": "text_de",
-            "indexed": True,
-            "stored": False,
-            "multiValued": True,
-        },
+        {"name": "search_text", "type": "text_de", "indexed": True, "stored": False, "multiValued": True},
     ]
 
-    # Add fields
     for field in fields:
         try:
-            response = requests.post(
+            requests.post(
                 schema_api,
                 headers={"Content-Type": "application/json"},
                 data=json.dumps({"add-field": field}),
                 timeout=10,
             )
-            if response.status_code == 200:
-                logger.info(f"Added field: {field['name']}")
-        except requests.RequestException as e:
-            logger.warning(f"Could not add field {field['name']}: {e}")
+            logger.info("Added field: %s", field["name"])
+        except requests.RequestException:
+            pass  # Field might already exist
 
-    # Copy fields
+    # Add copy fields to populate search_text
     copy_fields = [
         {"source": "label", "dest": "search_text"},
         {"source": "title", "dest": "search_text"},
         {"source": "text_content", "dest": "search_text"},
-        {"source": "norm_number", "dest": "search_text"},
     ]
 
     for copy_field in copy_fields:
         try:
-            response = requests.post(
+            requests.post(
                 schema_api,
                 headers={"Content-Type": "application/json"},
                 data=json.dumps({"add-copy-field": copy_field}),
                 timeout=10,
             )
-            if response.status_code == 200:
-                logger.info(
-                    f"Added copy field: {copy_field['source']} -> {copy_field['dest']}"
-                )
-        except requests.RequestException as e:
-            logger.warning(f"Could not add copy field {copy_field}: {e}")
+            logger.info("Added copy field: %s -> %s", copy_field["source"], copy_field["dest"])
+        except requests.RequestException:
+            pass  # Copy field might already exist
 
 
 def main():
@@ -179,16 +111,16 @@ def main():
         logger.error("Solr failed to start")
         sys.exit(1)
 
-    # Check if core exists, if not it was created by docker command
+    # Check if core exists
     try:
         response = requests.get(f"{solr_url}/admin/ping", timeout=5)
         if response.status_code == 200:
-            logger.info(f"Core {core_name} is ready")
+            logger.info("Core %s is ready", core_name)
         else:
-            logger.error(f"Core {core_name} is not available")
+            logger.error("Core %s is not available", core_name)
             sys.exit(1)
     except requests.RequestException as e:
-        logger.error(f"Cannot access core {core_name}: {e}")
+        logger.error("Cannot access core %s: %s", core_name, e)
         sys.exit(1)
 
     # Configure schema
