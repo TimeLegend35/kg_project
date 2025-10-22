@@ -1,2 +1,13 @@
 # ignore macOS system files
 .DS_Store
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+.venv/
