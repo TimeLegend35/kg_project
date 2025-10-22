@@ -1,0 +1,53 @@
+[project]
+name = "bgb-chat-service"
+version = "1.0.0"
+description = "AI-powered Legal Chat Service für das deutsche BGB"
+authors = [{name = "Your Name", email = "your.email@example.com"}]
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "python-multipart>=0.0.12",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "python-dotenv>=1.0.1",
+    "psycopg2-binary>=2.9.9",
+    "sqlalchemy>=2.0.35",
+    "langgraph-checkpoint-postgres>=2.0.1",
+    "sse-starlette>=2.1.3",
+    "httpx>=0.27.2",
+    "aiofiles>=24.1.0",
+    "python-json-logger>=2.0.7",
+    "qwen-agent>=0.0.10",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "black>=24.0.0",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312']
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+asyncio_mode = "auto"
+

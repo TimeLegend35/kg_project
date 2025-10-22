@@ -1,0 +1,49 @@
+# ============================================
+# Core FastAPI & Web Framework
+# ============================================
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-multipart==0.0.12
+
+# ============================================
+# Data Validation & Settings
+# ============================================
+pydantic==2.9.0
+pydantic-settings==2.5.0
+python-dotenv==1.0.1
+
+# ============================================
+# Database - Shared PostgreSQL mit Frontend!
+# ============================================
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.35
+
+# ============================================
+# Streaming & Real-time
+# ============================================
+sse-starlette==2.1.3
+websockets==12.0
+
+# ============================================
+# HTTP Client & Utilities
+# ============================================
+httpx==0.27.2
+aiofiles==24.1.0
+
+# ============================================
+# Monitoring & Logging
+# ============================================
+python-json-logger==2.0.7
+
+# ============================================
+# Qwen Agent (for BGB Assistant)
+# ============================================
+qwen-agent>=0.0.10
+
+# ============================================
+# SHARED PostgreSQL DB mit Frontend!
+# Backend liest aus den gleichen Drizzle-Tabellen
+# Frontend schreibt mit Drizzle ORM
+# Backend liest mit SQLAlchemy
+# ============================================
+

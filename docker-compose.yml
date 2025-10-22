@@ -27,10 +27,36 @@ services:
     networks:
       - bgb_network
 
+  # ============================================
+  # NEW: PostgreSQL für Chat Service Persistence
+  # ============================================
+  bgb-postgres:
+    image: postgres:16-alpine
+    container_name: bgb-postgres
+    environment:
+      POSTGRES_DB: bgb_chat
+      POSTGRES_USER: bgb_user
+      POSTGRES_PASSWORD: bgb_secure_password_2024
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - bgb_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bgb_user -d bgb_chat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bgb_network
+    restart: unless-stopped
+
 volumes:
   bgb_solr_data:
     driver: local
   bgb_blazegraph_data:
+    driver: local
+  bgb_postgres_data:
     driver: local
 
 networks:
