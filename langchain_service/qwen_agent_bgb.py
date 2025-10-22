@@ -15,7 +15,7 @@ import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from langchain_service.tools import bgb_solr_search, explore_bgb_entity_with_sparql
+from langchain_service.tools import bgb_solr_search, execute_bgb_sparql_query
 
 
 class QwenAgentBGB:
@@ -57,65 +57,52 @@ class QwenAgentBGB:
         self.functions = self._convert_tools_to_functions()
 
     def _convert_tools_to_functions(self) -> List[Dict]:
-        """Convert LangChain tools to Qwen-Agent function format."""
-
-        functions = [
-            {
-                "name": "bgb_solr_search",
-                "description": "Searches the Solr index for BGB (German Civil Code) articles and paragraphs based on German search terms. Use this to find relevant legal provisions.",
+        """Convert LangChain tools to Qwen-Agent function format dynamically."""
+        
+        # Use the already imported tools
+        tools = [bgb_solr_search, execute_bgb_sparql_query]
+        functions = []
+        
+        for tool in tools:
+            # Extract function schema from LangChain tool
+            function_def = {
+                "name": tool.name,
+                "description": tool.description,
                 "parameters": {
                     "type": "object",
-                    "properties": {
-                        "german_query": {
-                            "type": "string",
-                            "description": "German search terms to find relevant BGB articles and paragraphs",
-                        }
-                    },
-                    "required": ["german_query"],
-                },
-            },
-            {
-                "name": "explore_bgb_entity_with_sparql",
-                "description": """Explores a specific BGB entity using SPARQL queries to get detailed legal information and relationships. Usually called after bgb_solr_search to explore specific entities.
-
-BGB Ontology Overview:
-Classes: bgb-onto:LegalCode, bgb-onto:Norm, bgb-onto:Paragraph, bgb-onto:LegalConcept
-Properties: bgb-onto:hasNorm, bgb-onto:hasParagraph, bgb-onto:defines, bgb-onto:refersTo
-Namespaces: bgb-onto: http://example.org/bgb/ontology/, bgb-data: http://example.org/bgb/data/""",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "entity_uri": {
-                            "type": "string",
-                            "description": "The URI or identifier of the BGB entity to explore (e.g., 'bgb:§833' or full URI)",
-                        },
-                        "original_question": {
-                            "type": "string",
-                            "description": "The original user question for context-aware analysis",
-                        },
-                    },
-                    "required": ["entity_uri", "original_question"],
-                },
-            },
-        ]
-
+                    "properties": {},
+                    "required": []
+                }
+            }
+            
+            # Extract parameters from the tool's args_schema (Pydantic model)
+            if hasattr(tool, 'args_schema') and tool.args_schema:
+                schema = tool.args_schema.model_json_schema()
+                properties = schema.get('properties', {})
+                required = schema.get('required', [])
+                
+                function_def["parameters"]["properties"] = properties
+                function_def["parameters"]["required"] = required
+            
+            functions.append(function_def)
+        
         return functions
 
     def _call_bgb_solr_search(self, german_query: str):
         """Execute bgb_solr_search tool and return result."""
         return bgb_solr_search.invoke({"german_query": german_query})
 
-    def _call_explore_bgb_entity(self, entity_uri: str, original_question: str):
-        """Execute explore_bgb_entity_with_sparql tool and return result."""
-        return explore_bgb_entity_with_sparql.invoke(
-            {"entity_uri": entity_uri, "original_question": original_question}
+    def _call_execute_bgb_sparql_query(self, sparql_query: str, query_description: str):
+        """Execute execute_bgb_sparql_query tool and return result."""
+        return execute_bgb_sparql_query.invoke(
+            {"sparql_query": sparql_query, "query_description": query_description}
         )
 
     def get_function_by_name(self, function_name: str):
         """Get function by name for execution following Qwen-Agent documentation."""
         function_map = {
             "bgb_solr_search": self._call_bgb_solr_search,
-            "explore_bgb_entity_with_sparql": self._call_explore_bgb_entity,
+            "execute_bgb_sparql_query": self._call_execute_bgb_sparql_query,
         }
         return function_map.get(function_name)
 
@@ -137,8 +124,13 @@ Namespaces: bgb-onto: http://example.org/bgb/ontology/, bgb-data: http://example
                 "content": """Du bist ein hilfreicher Assistent für das deutsche Bürgerliche Gesetzbuch (BGB).
 
 Du hast Zugang zu folgenden Funktionen:
-- bgb_solr_search: Suche nach BGB-Paragraphen und rechtlichen Konzepten
-- explore_bgb_entity_with_sparql: Detailanalyse von spezifischen BGB-Entitäten
+- bgb_solr_search: Suche nach BGB-Paragraphen und rechtlichen Konzepten freitext suche
+- execute_bgb_sparql_query: Führe dynamisch SPARQL-Abfragen gegen die BGB-Wissensbasis aus es hilft mit einer eintität aus der suche zu arbeiten.
+
+Für SPARQL-Abfragen verwende diese Ontologie-Informationen:
+- Klassen: bgb-onto:LegalCode, bgb-onto:Norm, bgb-onto:Paragraph, bgb-onto:LegalConcept
+- Eigenschaften: bgb-onto:hasNorm, bgb-onto:hasParagraph, bgb-onto:textContent, bgb-onto:defines
+- Namespaces: bgb-onto: <http://example.org/bgb/ontology/>, bgb-data: <http://example.org/bgb/data/>
 
 Verwende diese Funktionen um genaue und aktuelle Informationen aus dem BGB zu finden.
 Antworte immer auf Deutsch und gib klare, verständliche Antworten basierend auf den gesammelten Informationen.""",
@@ -148,6 +140,7 @@ Antworte immer auf Deutsch und gib klare, verständliche Antworten basierend auf
 
         # Process function calls following exact Qwen-Agent documentation pattern
         print("🔄 Getting model response...")
+        responses = []
         for responses in self.llm.chat(messages=messages, functions=self.functions):
             pass
         messages.extend(responses)
@@ -173,9 +166,10 @@ Antworte immer auf Deutsch und gib klare, verständliche Antworten basierend auf
 
         # Get final response
         print("🔄 Getting final response...")
-        for responses in self.llm.chat(messages=messages, functions=self.functions):
+        final_responses = []
+        for final_responses in self.llm.chat(messages=messages, functions=self.functions):
             pass
-        messages.extend(responses)
+        messages.extend(final_responses)
 
         return {
             "messages": messages,

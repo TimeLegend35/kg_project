@@ -25,6 +25,7 @@ python-dotenv = "*"
 langgraph = "*"
 langchain-openai = "*"
 qwen-agent = "*"
+google-generativeai = "*"
 
 [dev-packages]
 black = "*"
