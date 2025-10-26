@@ -1,0 +1,67 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+pydantic = "*"
+pydantic-settings = "*"
+requests = "*"
+python-dotenv = "*"
+python-dateutil = "*"
+rdflib = "*"
+networkx = "*"
+matplotlib = "*"
+pyvis = "*"
+pandas = "*"
+seaborn = "*"
+plotly = "*"
+pypdf2 = "*"
+pymupdf = "*"
+numpy = "*"
+jupyterlab = "*"
+ipython = "*"
+langchain = "*"
+langchain-core = "*"
+langchain-community = "*"
+langchain-ollama = "*"
+langchain-openai = "*"
+langgraph = "*"
+qwen-agent = "*"
+fastapi = "*"
+uvicorn = {extras = ["standard"], version = "*"}
+python-multipart = "*"
+sqlalchemy = "*"
+psycopg = {extras = ["binary"], version = "*"}
+alembic = "*"
+pyjwt = "*"
+python-jose = {extras = ["cryptography"], version = "*"}
+google-generativeai = "*"
+
+[dev-packages]
+black = "*"
+
+[scripts]
+# Knowledge Graph & Search
+setup-search = "bash setup.sh"
+configure-solr = "python kg_search_index/configure_solr.py"
+query = "python kg_search_index/query_bgb.py"
+query-interactive = "python kg_search_index/query_bgb.py --interactive"
+build-index = "python kg_search_index/build_solr_index.py"
+load-blazegraph = "python blazegraph_instance/load_blazegraph.py"
+sparql = "python blazegraph_instance/query_sparql.py"
+sparql-interactive = "python blazegraph_instance/query_sparql.py --interactive"
+# AI Agents
+bgb-ai-qwen = "python bgb_ai_qwen.py"
+bgb-ai-gemini = "python langchain_service/gemini_agent_bgb.py"
+# API Server
+api-start = "uvicorn api.main:app --host 0.0.0.0 --port 8080 --reload"
+api-migrate = "alembic upgrade head"
+api-test = "python test_api.py"
+api-docker-build = "docker-compose build api"
+api-docker-up = "docker-compose up -d postgres api"
+api-docker-logs = "docker-compose logs -f api"
+api-docker-down = "docker-compose down"
+
+[requires]
+python_version = "3.11"
