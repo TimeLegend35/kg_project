@@ -7,13 +7,11 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import type { ToolUIPart } from "ai";
 import {
   CheckCircleIcon,
   ChevronDownIcon,
   CircleIcon,
   ClockIcon,
-  WrenchIcon,
   XCircleIcon,
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
@@ -31,17 +29,18 @@ export const Tool = ({ className, ...props }: ToolProps) => (
 
 export type ToolHeaderProps = {
   title?: string;
-  type: ToolUIPart["type"];
-  state: ToolUIPart["state"];
+  type?: string;
+  state: 'input-streaming' | 'input-available' | 'output-available' | 'output-error' | 'finished';
   className?: string;
 };
 
-const getStatusBadge = (status: ToolUIPart["state"]) => {
+const getStatusBadge = (status: 'input-streaming' | 'input-available' | 'output-available' | 'output-error' | 'finished') => {
   const labels = {
     "input-streaming": "Pending",
     "input-available": "Running",
     "output-available": "Completed",
     "output-error": "Error",
+    "finished": "Finished",
   } as const;
 
   const icons = {
@@ -49,6 +48,7 @@ const getStatusBadge = (status: ToolUIPart["state"]) => {
     "input-available": <ClockIcon className="size-4 animate-pulse" />,
     "output-available": <CheckCircleIcon className="size-4 text-green-600" />,
     "output-error": <XCircleIcon className="size-4 text-red-600" />,
+    "finished": <CheckCircleIcon className="size-4 text-green-600" />,
   } as const;
 
   return (
@@ -74,11 +74,9 @@ export const ToolHeader = ({
     {...props}
   >
     <div className="flex items-center gap-2">
-      <WrenchIcon className="size-4 text-muted-foreground" />
       <span className="font-medium text-sm">
-        {title ?? type.split("-").slice(1).join("-")}
+        {title ?? (type ? type.split("-").slice(1).join("-") : "Tool")}
       </span>
-      {getStatusBadge(state)}
     </div>
     <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
   </CollapsibleTrigger>
@@ -97,7 +95,7 @@ export const ToolContent = ({ className, ...props }: ToolContentProps) => (
 );
 
 export type ToolInputProps = ComponentProps<"div"> & {
-  input: ToolUIPart["input"];
+  input: any;
 };
 
 export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
@@ -112,8 +110,8 @@ export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
 );
 
 export type ToolOutputProps = ComponentProps<"div"> & {
-  output: ToolUIPart["output"];
-  errorText: ToolUIPart["errorText"];
+  output: any;
+  errorText?: string;
 };
 
 export const ToolOutput = ({

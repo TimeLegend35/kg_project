@@ -29,9 +29,10 @@ import {
 import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation';
 import { Message, MessageContent } from '@/components/ai-elements/message';
 import { Response } from '@/components/ai-elements/response';
+import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from '@/components/ai-elements/tool';
 
 import { apiClient } from '@/lib/api-client';
-import { useChatStore } from '@/lib/chat-store';
+import { useChatStore, type ToolCall } from '@/lib/chat-store';
 
 const models = [
   { id: 'qwen', name: 'Qwen' },
@@ -51,11 +52,9 @@ const InputDemo = ({ threadId: initialThreadId, onThreadCreated }: InputDemoProp
   const [threadId, setThreadId] = useState<string | undefined>(initialThreadId);
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [isThinking, setIsThinking] = useState<boolean>(false);
-  const [currentToolCalls, setCurrentToolCalls] = useState<any[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Use store for messages
-  const { getCachedMessages, loadMessages, addMessage, updateMessage, addThreadToList } = useChatStore();
+  const { getCachedMessages, loadMessages, addMessage, updateMessage, addToolCall, updateToolCall, addThreadToList } = useChatStore();
 
   // Get messages from cache
   const cachedMessages = threadId ? getCachedMessages(threadId) : undefined;
@@ -88,7 +87,6 @@ const InputDemo = ({ threadId: initialThreadId, onThreadCreated }: InputDemoProp
     setIsLoading(true);
     setIsStreaming(true);
     setIsThinking(true);
-    setCurrentToolCalls([]);
 
     const userMsg = {
       id: Date.now().toString(),
@@ -101,6 +99,7 @@ const InputDemo = ({ threadId: initialThreadId, onThreadCreated }: InputDemoProp
       id: assistantMsgId,
       role: 'assistant' as const,
       content: '',
+      toolCalls: [],
     };
 
     let workingThreadId = threadId || `temp-${Date.now()}`;
@@ -119,6 +118,7 @@ const InputDemo = ({ threadId: initialThreadId, onThreadCreated }: InputDemoProp
       });
 
       let actualThreadId = threadId;
+      let toolCallCount = 0;
 
       for await (const event of stream) {
         console.log('Stream event:', event);
@@ -126,6 +126,15 @@ const InputDemo = ({ threadId: initialThreadId, onThreadCreated }: InputDemoProp
         switch (event.type) {
           case 'start':
             setIsThinking(true);
+            break;
+
+          case 'thinking':
+            // Backend sendet thinking status
+            if (event.data.status === 'processing') {
+              setIsThinking(true);
+            } else if (event.data.status === 'done') {
+              setIsThinking(false);
+            }
             break;
 
           case 'metadata':
@@ -160,10 +169,21 @@ const InputDemo = ({ threadId: initialThreadId, onThreadCreated }: InputDemoProp
             break;
 
           case 'tool_call':
-            setCurrentToolCalls(prev => [...prev, event.data]);
+            // Tool wird dauerhaft in der Nachricht gespeichert
+            const toolCall: ToolCall = {
+              name: event.data.name || 'Tool',
+              arguments: event.data.arguments || event.data.args,
+              result: event.data.result,
+              state: event.data.result ? 'finished' : 'input-available',
+            };
+            if (workingThreadId) {
+              addToolCall(workingThreadId, assistantMsgId, toolCall);
+              toolCallCount++;
+            }
             break;
 
           case 'token':
+            // Erste token bedeutet thinking ist vorbei
             setIsThinking(false);
             if (workingThreadId) {
               const currentMsg = getCachedMessages(workingThreadId)?.find(m => m.id === assistantMsgId);
@@ -175,7 +195,16 @@ const InputDemo = ({ threadId: initialThreadId, onThreadCreated }: InputDemoProp
           case 'done':
             console.log('Message completed:', event.data);
             setIsThinking(false);
-            setCurrentToolCalls([]);
+
+            // Setze alle Tool-Calls auf "finished"
+            if (workingThreadId && toolCallCount > 0) {
+              const currentMsg = getCachedMessages(workingThreadId)?.find(m => m.id === assistantMsgId);
+              if (currentMsg?.toolCalls) {
+                currentMsg.toolCalls.forEach((_, idx) => {
+                  updateToolCall(workingThreadId, assistantMsgId, idx, { state: 'finished' });
+                });
+              }
+            }
             break;
 
           case 'error':
@@ -184,7 +213,6 @@ const InputDemo = ({ threadId: initialThreadId, onThreadCreated }: InputDemoProp
               updateMessage(workingThreadId, assistantMsgId, `Error: ${event.data.message}`);
             }
             setIsThinking(false);
-            setCurrentToolCalls([]);
             break;
         }
       }
@@ -200,7 +228,6 @@ const InputDemo = ({ threadId: initialThreadId, onThreadCreated }: InputDemoProp
       setIsLoading(false);
       setIsStreaming(false);
       setIsThinking(false);
-      setCurrentToolCalls([]);
     }
   };
 
@@ -239,61 +266,51 @@ const InputDemo = ({ threadId: initialThreadId, onThreadCreated }: InputDemoProp
                   {(cachedMessages || []).map((message) => (
                     <Message from={message.role} key={message.id}>
                       <MessageContent>
-                        <Response>
-                          {message.content}
-                        </Response>
+                        {/* Chain of Thought - Tool Calls als aufklappbare Komponenten */}
+                        {message.toolCalls && message.toolCalls.length > 0 && (
+                          <div className="space-y-2 mb-4">
+                            <div className="text-xs text-muted-foreground font-medium mb-2">
+                              Chain of Thought
+                            </div>
+                            {message.toolCalls.map((toolCall, idx) => (
+                              <Tool key={idx} defaultOpen={false}>
+                                <ToolHeader
+                                  title={toolCall.name}
+                                  type="tool-call"
+                                  state={toolCall.state}
+                                />
+                                <ToolContent>
+                                  <ToolInput input={toolCall.arguments} />
+                                  {toolCall.result && (
+                                    <ToolOutput output={toolCall.result} errorText={undefined} />
+                                  )}
+                                </ToolContent>
+                              </Tool>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Thinking Indicator während des Streamings */}
+                        {message.role === 'assistant' && isThinking && message.id === (cachedMessages?.[cachedMessages.length - 1]?.id) && (
+                          <div className="flex items-center gap-2 text-muted-foreground mb-3">
+                            <div className="flex space-x-1">
+                              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                              <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                            </div>
+                            <span className="text-sm italic">Thinking...</span>
+                          </div>
+                        )}
+
+                        {/* Antwort-Text */}
+                        {message.content && (
+                          <Response>
+                            {message.content}
+                          </Response>
+                        )}
                       </MessageContent>
                     </Message>
                   ))}
-
-                  {/* Thinking Indicator */}
-                  {isThinking && (
-                    <Message from="assistant" key="thinking">
-                      <MessageContent>
-                        <div className="flex items-center gap-2 text-muted-foreground">
-                          <div className="flex space-x-1">
-                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                          </div>
-                          <span className="text-sm italic">Thinking...</span>
-                        </div>
-                      </MessageContent>
-                    </Message>
-                  )}
-
-                  {/* Tool Calls Display */}
-                  {currentToolCalls.length > 0 && (
-                    <Message from="assistant" key="tools">
-                      <MessageContent>
-                        <div className="space-y-2">
-                          {currentToolCalls.map((tool, idx) => (
-                            <div key={idx} className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                              <svg className="w-4 h-4 mt-0.5 text-blue-600 dark:text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                              </svg>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                                  {tool.name || 'Tool'}
-                                </div>
-                                {tool.arguments && (
-                                  <div className="text-xs text-blue-700 dark:text-blue-300 mt-1 truncate">
-                                    {typeof tool.arguments === 'string' ? tool.arguments : JSON.stringify(tool.arguments)}
-                                  </div>
-                                )}
-                                {tool.result && (
-                                  <div className="text-xs text-green-700 dark:text-green-300 mt-1">
-                                    ✓ Completed
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </MessageContent>
-                    </Message>
-                  )}
                 </>
               )}
             </ConversationContent>

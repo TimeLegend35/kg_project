@@ -51,11 +51,6 @@ def _search_solr(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
         "rows": max_results,
         "fl": "id,uri,type,label,title,norm_number,paragraph_number,text_content,score",
         "sort": "score desc",
-        "hl": "true",
-        "hl.fl": "label,title,text_content",
-        "hl.simple.pre": "<b>",
-        "hl.simple.post": "</b>",
-        "hl.fragsize": 200,
     }
     
     try:
@@ -64,15 +59,10 @@ def _search_solr(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
         
         result = response.json()
         docs = result.get("response", {}).get("docs", [])
-        highlighting = result.get("highlighting", {})
-        
-        # Add highlighting information to documents and format for tool output
+
+        # Format for tool output
         formatted_results = []
         for doc in docs:
-            doc_id = doc.get("id")
-            if doc_id in highlighting:
-                doc["highlighting"] = highlighting[doc_id]
-            
             # Extract values from arrays if needed
             uri_raw = doc.get("uri", ["no uri"])
             uri = uri_raw[0] if isinstance(uri_raw, list) else uri_raw

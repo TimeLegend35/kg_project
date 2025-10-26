@@ -3,11 +3,19 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { apiClient } from './api-client';
 import type { Thread } from './api-client';
 
-interface ChatMessage {
+export interface ToolCall {
+  name: string;
+  arguments: any;
+  result?: any;
+  state: 'input-streaming' | 'input-available' | 'output-available' | 'output-error' | 'finished';
+}
+
+export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   created_at?: string;
+  toolCalls?: ToolCall[];
 }
 
 interface ThreadCache {
@@ -33,6 +41,8 @@ interface ChatStore {
   loadMessages: (threadId: string, force?: boolean) => Promise<ChatMessage[]>;
   addMessage: (threadId: string, message: ChatMessage) => void;
   updateMessage: (threadId: string, messageId: string, content: string) => void;
+  addToolCall: (threadId: string, messageId: string, toolCall: ToolCall) => void;
+  updateToolCall: (threadId: string, messageId: string, toolIndex: number, updates: Partial<ToolCall>) => void;
   createThread: (title?: string) => Promise<Thread>;
   deleteThread: (threadId: string) => Promise<void>;
   clearCache: () => void;
@@ -113,6 +123,12 @@ export const useChatStore = create<ChatStore>()(
               role: msg.role as 'user' | 'assistant',
               content: msg.content,
               created_at: msg.created_at,
+              toolCalls: msg.tool_calls?.map(tc => ({
+                name: tc.name,
+                arguments: tc.arguments,
+                result: tc.result,
+                state: 'finished' as const
+              })) || undefined,
             }));
 
           // Update cache
@@ -202,6 +218,51 @@ export const useChatStore = create<ChatStore>()(
               role: 'assistant',
               content: content,
             }],
+            lastFetched: Date.now(),
+          });
+          set({ threadCache: newCache });
+        }
+      },
+
+      // Add a tool call to a message
+      addToolCall: (threadId, messageId, toolCall) => {
+        const state = get();
+        const cached = state.threadCache.get(threadId);
+
+        if (cached) {
+          const newCache = new Map(state.threadCache);
+          newCache.set(threadId, {
+            ...cached,
+            messages: cached.messages.map(msg =>
+              msg.id === messageId
+                ? { ...msg, toolCalls: [...(msg.toolCalls || []), toolCall] }
+                : msg
+            ),
+            lastFetched: Date.now(),
+          });
+          set({ threadCache: newCache });
+        }
+      },
+
+      // Update a specific tool call in a message
+      updateToolCall: (threadId, messageId, toolIndex, updates) => {
+        const state = get();
+        const cached = state.threadCache.get(threadId);
+
+        if (cached) {
+          const newCache = new Map(state.threadCache);
+          newCache.set(threadId, {
+            ...cached,
+            messages: cached.messages.map(msg =>
+              msg.id === messageId && msg.toolCalls
+                ? {
+                    ...msg,
+                    toolCalls: msg.toolCalls.map((tc, idx) =>
+                      idx === toolIndex ? { ...tc, ...updates } : tc
+                    ),
+                  }
+                : msg
+            ),
             lastFetched: Date.now(),
           });
           set({ threadCache: newCache });

@@ -16,6 +16,7 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend.langchain_service.tools import bgb_solr_search, execute_bgb_sparql_query
+from backend.langchain_service.prompts import BGB_SYSTEM_PROMPT
 
 
 class QwenAgentBGB:
@@ -27,6 +28,7 @@ class QwenAgentBGB:
     def __init__(
         self,
         model_server: str = "http://localhost:11434/v1",
+        use_checkpointer: bool = True,
         enable_thinking: bool = True,
     ):
         """
@@ -34,6 +36,7 @@ class QwenAgentBGB:
 
         Args:
             model_server: OpenAI-compatible API endpoint (Ollama default)
+            use_checkpointer: Whether to use PostgresSaver for automatic persistence
             enable_thinking: Whether to use Qwen's thinking mode for reasoning traces
         """
 
@@ -55,6 +58,16 @@ class QwenAgentBGB:
 
         # Convert LangChain tools to Qwen-Agent function format
         self.functions = self._convert_tools_to_functions()
+
+        # Initialize PostgresSaver for automatic persistence
+        self.checkpointer = None
+        if use_checkpointer:
+            try:
+                self.checkpointer = get_postgres_checkpointer()
+                print("✅ PostgresSaver initialized for automatic persistence")
+            except Exception as e:
+                print(f"⚠️ Warning: Could not initialize PostgresSaver: {e}")
+                print("   Continuing without automatic persistence")
 
     def _convert_tools_to_functions(self) -> List[Dict]:
         """Convert LangChain tools to Qwen-Agent function format dynamically."""
@@ -106,37 +119,35 @@ class QwenAgentBGB:
         }
         return function_map.get(function_name)
 
-    def chat(self, user_question: str) -> Dict[str, Any]:
+
+    def chat(self, user_question: str, message_history: List[Dict[str, str]] = None) -> Dict[str, Any]:
         """
         Process a user question with function calling following Qwen-Agent documentation exactly.
 
         Args:
             user_question: User's question in German
+            message_history: Previous messages in the conversation (optional)
 
         Returns:
-            Dictionary containing the conversation history and final response
+            if not (self.checkpointer and thread_id):  # Only log if not already logged
+                print(f"📜 Loading {len(message_history)} messages from history...")
         """
 
-        # Initialize messages following Qwen-Agent documentation pattern
+        # Initialize messages with system prompt
         messages = [
             {
                 "role": "system",
-                "content": """Du bist ein hilfreicher Assistent für das deutsche Bürgerliche Gesetzbuch (BGB).
-
-Du hast Zugang zu folgenden Funktionen:
-- bgb_solr_search: Suche nach BGB-Paragraphen und rechtlichen Konzepten freitext suche
-- execute_bgb_sparql_query: Führe dynamisch SPARQL-Abfragen gegen die BGB-Wissensbasis aus es hilft mit einer eintität aus der suche zu arbeiten.
-
-Für SPARQL-Abfragen verwende diese Ontologie-Informationen:
-- Klassen: bgb-onto:LegalCode, bgb-onto:Norm, bgb-onto:Paragraph, bgb-onto:LegalConcept
-- Eigenschaften: bgb-onto:hasNorm, bgb-onto:hasParagraph, bgb-onto:textContent, bgb-onto:defines
-- Namespaces: bgb-onto: <http://example.org/bgb/ontology/>, bgb-data: <http://example.org/bgb/data/>
-
-Verwende diese Funktionen um genaue und aktuelle Informationen aus dem BGB zu finden.
-Antworte immer auf Deutsch und gib klare, verständliche Antworten basierend auf den gesammelten Informationen.""",
+                "content": BGB_SYSTEM_PROMPT,
             },
-            {"role": "user", "content": user_question},
         ]
+
+        # Add message history if provided (for context-aware conversations)
+        if message_history:
+            print(f"📜 Loading {len(message_history)} messages from history...")
+            messages.extend(message_history)
+
+        # Add the new user question
+        messages.append({"role": "user", "content": user_question})
 
         # Process function calls following exact Qwen-Agent documentation pattern
         print("🔄 Getting model response...")
@@ -146,6 +157,21 @@ Antworte immer auf Deutsch und gib klare, verständliche Antworten basierend auf
         messages.extend(responses)
 
         # Check and apply function calls exactly as documented
+        # Save to checkpointer if enabled
+        if self.checkpointer and thread_id:
+            try:
+                config = get_checkpointer_config(thread_id)
+                checkpoint_data = {
+                    "values": {
+                        "messages": messages,
+                        "final_response": self._extract_final_response(messages),
+                    }
+                }
+                self.checkpointer.put(config, checkpoint_data, {})
+                print(f"💾 Conversation saved to PostgresSaver")
+            except Exception as e:
+                print(f"⚠️ Warning: Could not save to checkpointer: {e}")
+
         for message in responses:
             if fn_call := message.get("function_call", None):
                 fn_name: str = fn_call['name']

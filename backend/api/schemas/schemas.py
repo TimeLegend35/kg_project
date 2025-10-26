@@ -48,7 +48,7 @@ class MessageResponse(BaseModel):
     role: MessageRoleEnum
     content: str
     agent_name: Optional[str] = None
-    tool_calls: Optional[Dict[str, Any]] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
     usage: Optional[Dict[str, Any]] = None
     created_at: datetime
 

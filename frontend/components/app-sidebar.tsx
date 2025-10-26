@@ -2,12 +2,12 @@
 
 import * as React from "react"
 import {
-  MessageSquare,
-  Plus,
-  Trash2,
-  Loader2,
-  Bot,
-  Sparkles,
+    MessageSquare,
+    Plus,
+    Trash2,
+    Loader2,
+    Bot,
+    Sparkles, Wrench, Space,
 } from "lucide-react"
 
 import {
@@ -21,6 +21,7 @@ import {
     SidebarGroupLabel,
     SidebarMenu,
     SidebarMenuItem,
+    useSidebar,
     SidebarMenuButton, SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
@@ -66,21 +67,27 @@ export function AppSidebar({
   const handleNewThread = () => {
     onNewThread();
   };
-
+  const { toggleSidebar } = useSidebar()
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" className="w-full">
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <SidebarTrigger />
-              </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">BGB AI Chat</span>
-                <span className="truncate text-xs">Rechtsassistent</span>
-              </div>
-            </SidebarMenuButton>
+            <div className="flex items-center gap-2">
+              <SidebarMenuButton
+                size="lg"
+                className="w-full"
+                onClick={toggleSidebar}
+              >
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                  <Space className="h-4 w-4" />
+                </div>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-semibold">BGB AI Chat</span>
+                  <span className="truncate text-xs">Rechtsassistent</span>
+                </div>
+              </SidebarMenuButton>
+            </div>
           </SidebarMenuItem>
         </SidebarMenu>
 

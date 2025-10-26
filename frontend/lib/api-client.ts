@@ -7,6 +7,12 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 const API_PREFIX = '/api/v1';
 
 // Types
+export interface ToolCall {
+  name: string;
+  arguments: string | any;
+  result?: string | any;
+}
+
 export interface Thread {
   id: string;
   title: string | null;
@@ -22,7 +28,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'tool';
   content: string;
   agent_name: string | null;
-  tool_calls: any | null;
+  tool_calls: ToolCall[] | null;
   usage: any | null;
   created_at: string;
 }
@@ -56,6 +62,7 @@ export interface SendMessageResponse {
 export type StreamEvent =
   | { type: 'metadata'; data: { thread_id: string } }
   | { type: 'start'; data: { role: string; agent: string } }
+  | { type: 'thinking'; data: { status: 'processing' | 'done' } }
   | { type: 'token'; data: { token: string } }
   | { type: 'tool_call'; data: any }
   | { type: 'usage'; data: any }

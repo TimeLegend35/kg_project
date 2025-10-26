@@ -16,7 +16,16 @@ from google.generativeai.types import FunctionDeclaration, Tool
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend.langchain_service.tools import bgb_solr_search, execute_bgb_sparql_query
+from backend.langchain_service.prompts import BGB_SYSTEM_PROMPT
 
+# Try to import checkpointer - it's optional
+try:
+    from backend.langchain_service.checkpointer import get_postgres_checkpointer, get_checkpointer_config
+    CHECKPOINTER_AVAILABLE = True
+except ImportError:
+    CHECKPOINTER_AVAILABLE = False
+    get_postgres_checkpointer = None
+    get_checkpointer_config = None
 
 class GeminiAgentBGB:
     """
@@ -26,6 +35,7 @@ class GeminiAgentBGB:
     def __init__(
         self,
         api_key: str = None,
+        use_checkpointer: bool = True,
         model_name: str = "gemini-1.5-pro",
     ):
         """
@@ -33,6 +43,7 @@ class GeminiAgentBGB:
 
         Args:
             api_key: Google API key for Gemini (can also be set via GOOGLE_API_KEY env var)
+            use_checkpointer: Whether to use PostgresSaver for automatic persistence
             model_name: Gemini model to use (gemini-1.5-pro, gemini-1.5-flash, etc.)
         """
         
@@ -50,20 +61,23 @@ class GeminiAgentBGB:
         self.model = genai.GenerativeModel(
             model_name=model_name,
             tools=self.tools,
-            system_instruction="""Du bist ein hilfreicher Assistent für das deutsche Bürgerliche Gesetzbuch (BGB).
-
-Du hast Zugang zu folgenden Funktionen:
-- bgb_solr_search: Suche nach BGB-Paragraphen und rechtlichen Konzepten (Freitextsuche)
-- execute_bgb_sparql_query: Führe dynamische SPARQL-Abfragen gegen die BGB-Wissensbasis aus (strukturierte Abfragen basierend auf Suchergebnissen)
-
-Für SPARQL-Abfragen verwende diese Ontologie-Informationen:
-- Klassen: bgb-onto:LegalCode, bgb-onto:Norm, bgb-onto:Paragraph, bgb-onto:LegalConcept
-- Eigenschaften: bgb-onto:hasNorm, bgb-onto:hasParagraph, bgb-onto:textContent, bgb-onto:defines
-- Namespaces: bgb-onto: <http://example.org/bgb/ontology/>, bgb-data: <http://example.org/bgb/data/>
-
-Verwende diese Funktionen um genaue und aktuelle Informationen aus dem BGB zu finden.
-Antworte immer auf Deutsch und gib klare, verständliche Antworten basierend auf den gesammelten Informationen."""
+            system_instruction=BGB_SYSTEM_PROMPT
         )
+
+        # Initialize PostgresSaver for automatic persistence
+        self.checkpointer = None
+        if use_checkpointer:
+            if not CHECKPOINTER_AVAILABLE:
+                print("⚠️ Warning: langgraph.checkpoint.postgres not available")
+                print("   Continuing without automatic persistence")
+                print("   To enable: pip install langgraph-checkpoint-postgres")
+            else:
+                try:
+                    self.checkpointer = get_postgres_checkpointer()
+                    print("✅ PostgresSaver initialized for automatic persistence")
+                except Exception as e:
+                    print(f"⚠️ Warning: Could not initialize PostgresSaver: {e}")
+                    print("   Continuing without automatic persistence")
 
     def _convert_tools_to_gemini_functions(self) -> List[FunctionDeclaration]:
         """Convert LangChain tools to Gemini function declarations."""
@@ -121,34 +135,72 @@ Antworte immer auf Deutsch und gib klare, verständliche Antworten basierend auf
         }
         return function_map.get(function_name)
 
-    def chat(self, user_question: str) -> Dict[str, Any]:
+    def chat(self, user_question: str, message_history: List[Dict[str, str]] = None, thread_id: str = None) -> Dict[str, Any]:
         """
         Process a user question with function calling using Gemini API.
 
         Args:
-            user_question: User's question in German
+            user_question: The user's question
+            message_history: Previous messages in the conversation (optional)
+            thread_id: Thread ID for conversation persistence (optional)
 
         Returns:
             Dictionary containing the conversation history and final response
         """
 
+        # If checkpointer is enabled and thread_id provided, load from checkpointer
+        if self.checkpointer and thread_id:
+            print(f"💾 Using PostgresSaver for thread: {thread_id}")
+            config = get_checkpointer_config(thread_id)
+
+            # Load existing conversation state from checkpointer
+            state = self.checkpointer.get(config)
+            if state and "messages" in state.get("values", {}):
+                saved_messages = state["values"]["messages"]
+                # Convert saved messages back to message_history format
+                message_history = [
+                    msg for msg in saved_messages
+                    if msg.get("role") in ["user", "assistant", "model"]
+                ]
+                print(f"📜 Loaded {len(message_history)} messages from PostgresSaver")
+
+
         print("🔄 Getting Gemini response...")
+
+        # Convert message history to Gemini format if provided
+        gemini_history = []
+        if message_history:
+            print(f"📜 Loading {len(message_history)} messages from history...")
+            for msg in message_history:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                
+                # Convert roles to Gemini format (user/model)
+                if role == "assistant":
+                    role = "model"
+                elif role == "system":
+                    continue  # Skip system messages as they're in system_instruction
+                
+                gemini_history.append({
+                    "role": role,
+                    "parts": [content]
+                })
+
+        # Start chat session with history
+        chat = self.model.start_chat(history=gemini_history)
         
-        # Start chat session
-        chat = self.model.start_chat()
-        
-        # Send initial message
+        # Send new message
         response = chat.send_message(user_question)
-        
+
         messages = [
             {"role": "user", "content": user_question},
         ]
 
-        # Handle function calls in a loop
+        # Track function calls made
         function_calls_made = []
-        
+
+        # Handle function calls in a loop
         while True:
-            # Check if there are function calls in the response
             has_function_calls = False
             
             # Check each part of the response for function calls
@@ -190,7 +242,6 @@ Antworte immer auf Deutsch und gib klare, verständliche Antworten basierend auf
                                     response={"result": fn_result_str}
                                 )
                             )
-                            
                             response = chat.send_message([function_response])
                             
                         except Exception as e:
@@ -219,6 +270,28 @@ Antworte immer auf Deutsch und gib klare, verständliche Antworten basierend auf
 
         print("✅ Final response ready")
         
+        # Save to checkpointer if enabled
+        if self.checkpointer and thread_id:
+            try:
+                config = get_checkpointer_config(thread_id)
+
+                # Prepare all messages for storage
+                all_messages = []
+                if message_history:
+                    all_messages.extend(message_history)
+                all_messages.extend(messages)
+
+                checkpoint_data = {
+                    "values": {
+                        "messages": all_messages,
+                        "final_response": final_text,
+                    }
+                }
+                self.checkpointer.put(config, checkpoint_data, {})
+                print(f"💾 Conversation saved to PostgresSaver")
+            except Exception as e:
+                print(f"⚠️ Warning: Could not save to checkpointer: {e}")
+
         return {
             "messages": messages,
             "final_response": final_text,

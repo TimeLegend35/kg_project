@@ -84,6 +84,7 @@ async def _stream_chat_response(
             content=request.message
         )
         db.commit()
+        db.refresh(user_msg)
 
         # Send start event
         yield _format_sse_event("start", {
@@ -91,35 +92,25 @@ async def _stream_chat_response(
             "agent": request.agent
         })
 
+        # Send thinking event
+        yield _format_sse_event("thinking", {"status": "processing"})
+
         # Call agent (non-streaming, then simulate streaming)
+        # Add thread_id to params for PostgresSaver
+        agent_params = request.params or {}
+        agent_params["thread_id"] = str(thread_id)
+
         try:
             result = run_agent(
                 agent=request.agent,
                 messages=agent_messages,
-                params=request.params,
+                params=agent_params,
                 stream=False
             )
 
-            # Simulate token streaming by splitting the response
+            # Persist assistant message BEFORE streaming
+            # This ensures the message is saved even if streaming is interrupted
             content = result["content"]
-
-            # Stream tokens in chunks
-            chunk_size = 5  # Characters per chunk
-            for i in range(0, len(content), chunk_size):
-                chunk = content[i:i+chunk_size]
-                yield _format_sse_event("token", {"token": chunk})
-                await asyncio.sleep(0.02)  # Small delay for realistic streaming
-
-            # Send tool calls if available
-            if result.get("tool_calls"):
-                for tool_call in result["tool_calls"]:
-                    yield _format_sse_event("tool_call", tool_call)
-
-            # Send usage if available
-            if result.get("usage"):
-                yield _format_sse_event("usage", result["usage"])
-
-            # Persist assistant message
             assistant_msg = msg_repo.create(
                 thread_id=thread_id,
                 role=MessageRole.assistant,
@@ -132,6 +123,28 @@ async def _stream_chat_response(
             # Update thread timestamp
             thread_repo.update_timestamp(thread_id)
             db.commit()
+            db.refresh(assistant_msg)
+
+            # Stream tool calls FIRST (during thinking phase)
+            if result.get("tool_calls"):
+                for tool_call in result["tool_calls"]:
+                    yield _format_sse_event("tool_call", tool_call)
+                    await asyncio.sleep(0.1)  # Small delay to show tool execution
+
+            # Thinking done
+            yield _format_sse_event("thinking", {"status": "done"})
+
+            # Stream tokens in chunks for UI effect
+            chunk_size = 5  # Characters per chunk
+            for i in range(0, len(content), chunk_size):
+                chunk = content[i:i+chunk_size]
+                yield _format_sse_event("token", {"token": chunk})
+                await asyncio.sleep(0.02)  # Small delay for realistic streaming
+
+            # Send usage if available
+            if result.get("usage"):
+                yield _format_sse_event("usage", result["usage"])
+
 
             # Send done event
             yield _format_sse_event("done", {

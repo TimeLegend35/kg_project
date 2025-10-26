@@ -97,17 +97,23 @@ def _run_qwen_agent(
     if not user_question:
         raise ValidationError("No user message found in conversation history")
 
+    # Extract thread_id from params if available
+    thread_id = params.get("thread_id")
+
+    # Prepare message history (all messages EXCEPT the last user message)
+    message_history = [msg for msg in messages[:-1]] if len(messages) > 1 else None
+
     if stream:
         # Streaming not yet implemented in qwen_agent_bgb
         # For now, fall back to non-streaming
-        return _run_qwen_non_stream(agent, user_question)
+        return _run_qwen_non_stream(agent, user_question, message_history, thread_id)
     else:
-        return _run_qwen_non_stream(agent, user_question)
+        return _run_qwen_non_stream(agent, user_question, message_history, thread_id)
 
 
-def _run_qwen_non_stream(agent, user_question: str) -> Dict[str, Any]:
+def _run_qwen_non_stream(agent, user_question: str, message_history: List[Dict[str, Any]] = None, thread_id: str = None) -> Dict[str, Any]:
     """Run Qwen agent without streaming"""
-    result = agent.chat(user_question)
+    result = agent.chat(user_question, message_history=message_history, thread_id=thread_id)
 
     # Extract tool calls from messages
     tool_calls = []
@@ -144,20 +150,25 @@ def _run_gemini_agent(
             user_question = msg.get("content")
             break
 
+    # Extract thread_id from params if available
+    thread_id = params.get("thread_id")
+
     if not user_question:
         raise ValidationError("No user message found in conversation history")
 
+    # Prepare message history (all messages EXCEPT the last user message)
+    message_history = [msg for msg in messages[:-1]] if len(messages) > 1 else None
+
     if stream:
         # Streaming not yet implemented in gemini_agent_bgb
-        # For now, fall back to non-streaming
-        return _run_gemini_non_stream(agent, user_question)
+        return _run_gemini_non_stream(agent, user_question, message_history, thread_id)
     else:
-        return _run_gemini_non_stream(agent, user_question)
+        return _run_gemini_non_stream(agent, user_question, message_history, thread_id)
 
 
-def _run_gemini_non_stream(agent, user_question: str) -> Dict[str, Any]:
+def _run_gemini_non_stream(agent, user_question: str, message_history: List[Dict[str, Any]] = None, thread_id: str = None) -> Dict[str, Any]:
     """Run Gemini agent without streaming"""
-    result = agent.chat(user_question)
+    result = agent.chat(user_question, message_history=message_history, thread_id=thread_id)
 
     # Extract tool calls from messages
     tool_calls = []
