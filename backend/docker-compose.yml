@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: bgb-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=bgb_chat
+      - POSTGRES_USER=bgb_user
+      - POSTGRES_PASSWORD=bgb_password
+    volumes:
+      - bgb_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bgb_user -d bgb_chat"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bgb_network
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: bgb-api
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_URL=postgresql+psycopg://bgb_user:bgb_password@postgres:5432/bgb_chat
+      - LOG_LEVEL=INFO
+      - AGENT_SERVICE_MODE=inproc
+      - API_KEY=dev-api-key-change-me
+      - JWT_SECRET=dev-jwt-secret-change-me
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: bash -c "alembic upgrade head && uvicorn api.main:app --host 0.0.0.0 --port 8080"
+    networks:
+      - bgb_network
+    volumes:
+      - ./langchain_service:/app/langchain_service:ro
+
+  bgb-solr:
+    image: solr:9.4
+    container_name: bgb-solr
+    ports:
+      - "8984:8983"  # Use different port to avoid conflicts with other Solr instances
+    environment:
+      - SOLR_OPTS=-Dsolr.log.level=INFO
+    volumes:
+      - bgb_solr_data:/var/solr
+    command:
+      - solr-precreate
+      - bgb_core
+    networks:
+      - bgb_network
+
+  bgb-blazegraph:
+    image: lyrasis/blazegraph:2.1.5
+    container_name: bgb-blazegraph
+    ports:
+      - "9999:8080"  # Blazegraph runs on port 8080
+    environment:
+      - JAVA_OPTS=-Xmx2g -Xms512m
+    volumes:
+      - bgb_blazegraph_data:/var/lib/blazegraph
+      - ./kg_curation/output:/data:ro  # Mount TTL file directory as read-only
+    networks:
+      - bgb_network
+
+volumes:
+  bgb_postgres_data:
+    driver: local
+  bgb_solr_data:
+    driver: local
+  bgb_blazegraph_data:
+    driver: local
+
+networks:
+  bgb_network:
+    driver: bridge
