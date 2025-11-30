@@ -87,15 +87,15 @@ def build_graph(data: Dict[str, Any]) -> Graph:
 
     # --- NEW CONCEPT LOGIC ---
     # Add concepts from the global concept index provided in the JSON
-    # Note: the JSON stores this as a dictionary (key: id, value: object)
-    concepts = data.get("concepts", {})
-    for concept in concepts:
+    # The JSON stores concepts in "conceptIndex" as a dictionary (key: id, value: object)
+    concept_index = data.get("conceptIndex", {})
+    for concept in concept_index.values():
         concept_uri = curie_to_uri(concept["id"])
         g.add((concept_uri, RDF.type, CLASS_CONCEPT))
         g.add((concept_uri, RDFS.label, Literal(concept.get("label"))))
         
         # Link the concept back to the paragraph that defines it
-        if "defined_in" in concept:
+        if concept.get("defined_in"):
             para_uri = curie_to_uri(concept["defined_in"])
             # This creates the triple: [Paragraph] bgb-onto:defines [LegalConcept]
             g.add((para_uri, PROP_DEFINES, concept_uri))
